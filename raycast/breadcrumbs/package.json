@@ -1,0 +1,18 @@
+{
+  "$schema": "https://www.raycast.com/schemas/extension.json",
+  "name": "breadcrumbs",
+  "title": "Breadcrumbs",
+  "description": "Launcher for the Breadcrumbs box-sprint timer. The macOS app owns the timer; these commands talk to it over breadcrumbs:// URLs.",
+  "icon": "icon.png",
+  "author": "opslab",
+  "license": "MIT",
+  "categories": ["Productivity"],
+  "commands": [
+    { "name": "start-sprint", "title": "Start Sprint", "description": "Start a box sprint in Breadcrumbs", "mode": "no-view" },
+    { "name": "pause-resume", "title": "Pause/Resume Sprint", "description": "Pause or resume the running sprint", "mode": "no-view" },
+    { "name": "todays-boxes", "title": "Today's Boxes", "description": "Show today's ticked boxes and open History", "mode": "no-view" }
+  ],
+  "dependencies": { "@raycast/api": "^1.80.0" },
+  "devDependencies": { "@types/node": "^20.8.10", "typescript": "^5.4.5" },
+  "scripts": { "build": "ray build -e dist", "dev": "ray develop" }
+}
