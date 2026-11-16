@@ -19,18 +19,28 @@ struct NudgeView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            card
-                .frame(width: Self.cardWidth)
-                .background(
-                    RoundedRectangle(cornerRadius: 22, style: .continuous).fill(Theme.paper)
-                        .shadow(color: Theme.shadow, radius: 20, y: 12)
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 22, style: .continuous).strokeBorder(Theme.rule, lineWidth: 1)
-                )
+            if nudge.mode == .hidden {
+                // The panel is ordered out but kept alive; render nothing there (a hidden
+                // check-in card would otherwise keep a breathing box animating forever).
+                Color.clear.frame(width: Self.cardWidth, height: 0)
+            } else {
+                cardBody
+            }
             Spacer(minLength: 0)
         }
         .padding(Self.shadowPad)
+    }
+
+    private var cardBody: some View {
+        card
+            .frame(width: Self.cardWidth)
+            .background(
+                RoundedRectangle(cornerRadius: 22, style: .continuous).fill(Theme.paper)
+                    .shadow(color: Theme.shadow, radius: 20, y: 12)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 22, style: .continuous).strokeBorder(Theme.rule, lineWidth: 1)
+            )
     }
 
     @ViewBuilder private var card: some View {

@@ -8,7 +8,6 @@ import SwiftUI
 @MainActor
 final class AppModel: ObservableObject {
     @Published private(set) var engine = SprintEngine()
-    @Published private(set) var now = Date()
     @Published private(set) var todayWorked = 0
     @Published private(set) var todayMissed = 0
     @Published private(set) var week: [DayStat] = []
@@ -22,6 +21,9 @@ final class AppModel: ObservableObject {
     let history: HistoryStore
     let chime: Chime?
     let statusURL: URL?
+    /// Ticks once per displayed second, and only while running. Kept out of the model's own
+    /// `@Published` state so a tick doesn't re-render every view that observes the model.
+    let clock = SprintClock()
 
     var onIntervalEnded: (() -> Void)?
     var onAnswered: ((_ worked: Bool, _ completed: Bool) -> Void)?
@@ -64,6 +66,7 @@ final class AppModel: ObservableObject {
 
     // MARK: Derived
 
+    var now: Date { clock.now }
     var sprint: Sprint? { engine.sprint }
     var remaining: TimeInterval? { engine.remaining(now: now) }
     var progress: Double { engine.progress(now: now) }
@@ -93,8 +96,8 @@ final class AppModel: ObservableObject {
         if engine.phase == .completed { engine.reset() }
         let t = Date()
         guard engine.start(config: override ?? settings.sprintConfig, now: t) else { return }
-        now = t
-        startFastTimer()
+        clock.set(t)
+        syncFastTimer()
         onSprintStarted?()
         writeStatus()
     }
@@ -103,7 +106,8 @@ final class AppModel: ObservableObject {
         let t = Date()
         guard engine.isActive else { return }
         engine.togglePause(now: t)
-        now = t
+        clock.set(t)
+        syncFastTimer()
         if engine.isAwaitingCheckIn { intervalEnded() }
         writeStatus()
     }
@@ -114,13 +118,13 @@ final class AppModel: ObservableObject {
     func answer(worked: Bool) {
         let t = Date()
         guard let record = engine.answer(worked: worked, now: t) else { return }
-        now = t
+        clock.set(t)
+        syncFastTimer()
         do { try history.append(record) } catch { NSLog("Breadcrumbs: failed to write history: \(error)") }
         refreshStats()
         let completed = engine.phase == .completed
         if completed {
             lastSprint = engine.sprint
-            stopFastTimer()
         }
         onAnswered?(worked, completed)
         writeStatus()
@@ -128,7 +132,7 @@ final class AppModel: ObservableObject {
 
     func cancel() {
         guard engine.cancel() else { return }
-        stopFastTimer()
+        syncFastTimer()
         onCancelled?()
         writeStatus()
     }
@@ -173,12 +177,27 @@ final class AppModel: ObservableObject {
 
     // MARK: Clock
 
-    private func startFastTimer() {
+    /// Runs the timer only while a box is counting down. Paused, awaiting a check-in, idle and
+    /// completed show nothing time-dependent, so they need no timer at all.
+    private func syncFastTimer() {
+        if case .running = engine.phase { scheduleNextTick() } else { stopFastTimer() }
+    }
+
+    /// One-shot timer for the instant the displayed second next changes — the countdown shows
+    /// `ceil(remaining)`, so that's `endsAt - k` for whole `k`, and `k == 0` is the interval end.
+    /// Re-armed from the wall clock on every fire, so sleep or a clock change self-corrects.
+    private func scheduleNextTick() {
         stopFastTimer()
-        let timer = Timer(timeInterval: 0.25, repeats: true) { [weak self] _ in
+        guard case let .running(endsAt) = engine.phase else { return }
+        let remaining = endsAt.timeIntervalSince(Date())
+        let k = max(0, Self.displayedSeconds(remaining) - 1)
+        // A hair past the boundary so the fire lands on the new second, never just before it.
+        let fireAt = endsAt.addingTimeInterval(-Double(k) + 0.002)
+        let timer = Timer(fire: fireAt, interval: 0, repeats: false) { [weak self] _ in
             MainActor.assumeIsolated { self?.tick() }
         }
-        timer.tolerance = 0.05
+        // Timers never fire early; tolerance only lets them fire late, which coalesces wakeups.
+        timer.tolerance = 0.2
         RunLoop.main.add(timer, forMode: .common)
         fastTimer = timer
     }
@@ -188,14 +207,29 @@ final class AppModel: ObservableObject {
         fastTimer = nil
     }
 
+    /// Mirrors `Format.clock`'s rounding.
+    private static func displayedSeconds(_ remaining: TimeInterval) -> Int {
+        max(0, Int(remaining.rounded(.up)))
+    }
+
     private func tick() {
-        guard engine.isActive else { return }
-        now = Date()
+        guard case let .running(endsAt) = engine.phase else { stopFastTimer(); return }
+        let t = Date()
         var e = engine
-        if e.tick(now: now) {
+        if e.tick(now: t) {
             engine = e
+            clock.set(t)
+            stopFastTimer()
             intervalEnded()
+            return
         }
+        // Publish only when what's on screen changes (the glyph's eighths step lands on the
+        // next second at worst, as it did at the old 4 Hz to within 0.25 s).
+        let shownBefore = Self.displayedSeconds(endsAt.timeIntervalSince(clock.now))
+        if Self.displayedSeconds(endsAt.timeIntervalSince(t)) != shownBefore || clock.now > t {
+            clock.set(t)
+        }
+        scheduleNextTick()
     }
 
     private func intervalEnded() {
@@ -243,7 +277,7 @@ final class AppModel: ObservableObject {
 
     func debugLoad(engine: SprintEngine, now: Date, lastSprint: Sprint? = nil) {
         self.engine = engine
-        self.now = now
+        clock.set(now)
         self.lastSprint = lastSprint
     }
 }

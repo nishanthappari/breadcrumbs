@@ -25,7 +25,7 @@ struct BoxView: View {
     @State private var checkTrim: CGFloat
     @State private var bounce: CGFloat = 1
     @State private var dashOpacity: Double
-    @State private var breathe = false
+    @Environment(\.windowIsVisible) private var windowIsVisible
 
     init(state: BoxState, mode: Mode = .still, progress: Double = 0, size: CGFloat = 28) {
         self.state = state
@@ -42,7 +42,44 @@ struct BoxView: View {
 
     private var isCurrent: Bool { state == .pending && mode != .still }
 
+    /// The awaiting box breathes only while it's actually on screen. The animator exists only in
+    /// that branch, so leaving `.awaiting`, disappearing, or the window hiding removes it — and
+    /// its animation — outright, instead of relying on cancelling a `.repeatForever`.
+    private var breathes: Bool { mode == .awaiting && isCurrent && windowIsVisible }
+
     var body: some View {
+        Group {
+            if breathes && BoxRow.staticRendering {
+                // Fixture renders show the breath's peak, as the old onAppear animation did.
+                box(breathe: true)
+            } else if breathes {
+                PhaseAnimator([false, true]) { breathe in
+                    box(breathe: breathe)
+                } animation: { _ in
+                    .easeInOut(duration: 1.2)
+                }
+            } else {
+                box(breathe: false)
+            }
+        }
+        .onChange(of: state) { old, new in
+            if new == .worked && old != .worked {
+                checkTrim = 0
+                withAnimation(.easeOut(duration: 0.35)) { checkTrim = 1 }
+                withAnimation(.spring(response: 0.22, dampingFraction: 0.5)) { bounce = 1.12 }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.18) {
+                    withAnimation(Theme.spring) { bounce = 1 }
+                }
+            } else if new == .missed && old != .missed {
+                withAnimation(.easeOut(duration: 0.25)) { dashOpacity = 1 }
+            }
+        }
+        // Progress now steps once a second; a 1 s linear ramp keeps the fill rising continuously.
+        .animation(.linear(duration: 1), value: progress)
+        .accessibilityLabel(accessibility)
+    }
+
+    private func box(breathe: Bool) -> some View {
         ZStack {
             shape.fill(fill)
             if isCurrent {
@@ -73,31 +110,10 @@ struct BoxView: View {
             }
         }
         .frame(width: size, height: size)
+        // Boxes are decorative; a plain rect keeps window hit-region queries (drag margins on the
+        // movable nudge panel) from stroking the rounded / dashed border path.
+        .contentShape(Rectangle())
         .scaleEffect(bounce * (mode == .awaiting && isCurrent ? (breathe ? 1.04 : 1) : 1))
-        .onChange(of: state) { old, new in
-            if new == .worked && old != .worked {
-                checkTrim = 0
-                withAnimation(.easeOut(duration: 0.35)) { checkTrim = 1 }
-                withAnimation(.spring(response: 0.22, dampingFraction: 0.5)) { bounce = 1.12 }
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.18) {
-                    withAnimation(Theme.spring) { bounce = 1 }
-                }
-            } else if new == .missed && old != .missed {
-                withAnimation(.easeOut(duration: 0.25)) { dashOpacity = 1 }
-            }
-        }
-        .onAppear { startBreathingIfNeeded() }
-        .onChange(of: mode) { _, _ in startBreathingIfNeeded() }
-        .animation(.linear(duration: 0.25), value: progress)
-        .accessibilityLabel(accessibility)
-    }
-
-    private func startBreathingIfNeeded() {
-        if mode == .awaiting {
-            withAnimation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true)) { breathe = true }
-        } else {
-            breathe = false
-        }
     }
 
     private var fill: Color {

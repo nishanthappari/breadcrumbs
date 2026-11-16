@@ -58,6 +58,13 @@ enum MenuBarGlyph {
 
 struct MenuBarLabel: View {
     @ObservedObject var model: AppModel
+    /// The label is always on screen, so it follows every tick directly.
+    @ObservedObject private var clock: SprintClock
+
+    init(model: AppModel) {
+        self.model = model
+        self.clock = model.clock
+    }
 
     var body: some View {
         HStack(spacing: 4) {
@@ -97,6 +104,8 @@ struct MenuContentView: View {
         }
         .frame(width: Self.width)
         .background(Theme.paper)
+        // The MenuBarExtra window stays alive while closed; let live leaves stop updating then.
+        .tracksWindowVisibility()
     }
 
     private var mainPage: some View {
@@ -175,15 +184,21 @@ struct MenuContentView: View {
     private var runningBlock: some View {
         let s = model.sprint!
         let paused = model.engine.isPaused
+        let engine = model.engine
+        let mode = model.currentMode
         return VStack(alignment: .leading, spacing: 14) {
-            BoxRow(boxes: s.boxes, currentIndex: s.currentIndex, currentMode: model.currentMode,
-                   progress: model.progress, maxBoxSize: 34, width: Self.width - 32)
-                .frame(maxWidth: .infinity)
+            LiveClock(clock: model.clock) { now in
+                BoxRow(boxes: s.boxes, currentIndex: s.currentIndex, currentMode: mode,
+                       progress: engine.progress(now: now), maxBoxSize: 34, width: Self.width - 32)
+            }
+            .frame(maxWidth: .infinity)
             HStack(alignment: .lastTextBaseline) {
-                Text(Format.clock(model.remaining ?? 0))
-                    .font(Theme.number(30, .medium))
-                    .foregroundStyle(paused ? Theme.inkSoft : Theme.ink)
-                    .contentTransition(.numericText(countsDown: true))
+                LiveClock(clock: model.clock) { now in
+                    Text(Format.clock(engine.remaining(now: now) ?? 0))
+                        .font(Theme.number(30, .medium))
+                        .foregroundStyle(paused ? Theme.inkSoft : Theme.ink)
+                        .contentTransition(.numericText(countsDown: true))
+                }
                 Spacer()
                 VStack(alignment: .trailing, spacing: 2) {
                     Text("Box \(s.currentIndex + 1) of \(s.config.boxes)")
