@@ -115,7 +115,9 @@ final class AppModel: ObservableObject {
     func pause() { if case .running = engine.phase { togglePause() } }
     func resume() { if engine.isPaused { togglePause() } }
 
-    func answer(worked: Bool) {
+    /// Answers the check-in. With `startNext`, answering the last box skips the completion
+    /// card and starts a fresh sprint straight away (ignored on any other box).
+    func answer(worked: Bool, startNext: Bool = false) {
         let t = Date()
         guard let record = engine.answer(worked: worked, now: t) else { return }
         clock.set(t)
@@ -126,8 +128,20 @@ final class AppModel: ObservableObject {
         if completed {
             lastSprint = engine.sprint
         }
+        if completed && startNext {
+            // Show the brief "Ticked." beat, then let it fade; no completion card.
+            onAnswered?(worked, false)
+            startSprint()
+            return
+        }
         onAnswered?(worked, completed)
         writeStatus()
+    }
+
+    /// True while the check-in being asked is the sprint's final box.
+    var isLastBoxCheckIn: Bool {
+        guard engine.isAwaitingCheckIn, let s = engine.sprint else { return false }
+        return s.currentIndex == s.config.boxes - 1
     }
 
     func cancel() {

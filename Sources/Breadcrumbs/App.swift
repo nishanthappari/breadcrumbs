@@ -101,7 +101,9 @@ final class URLRouter {
         case "today", "history": coordinator.showHistory()
         case "answer", "checkin":
             let v = (q["worked"] ?? q["answer"] ?? "").lowercased()
-            model.answer(worked: ["yes", "y", "true", "1"].contains(v))
+            // breadcrumbs://answer?worked=yes&next=1 — on the last box, roll into a new sprint.
+            let next = ["1", "true", "yes"].contains((q["next"] ?? "").lowercased())
+            model.answer(worked: ["yes", "y", "true", "1"].contains(v), startNext: next)
         case "done": coordinator.closeCompletion()
         case "settings":
             if let m = q["interval"].flatMap(Int.init) { model.setInterval(m) }

@@ -86,6 +86,13 @@ enum FixtureSnapshots {
         model.debugLoad(engine: answered, now: tr + 301)
         both("10-checkin-answered") { panel(model, .answered(worked: true)) }
 
+        // Check-in on the last box (shows "Yes, start next sprint")
+        let (last, tl) = engine([true, false, true, true, true])
+        var lastAsk = last
+        lastAsk.tick(now: tl + 300)
+        model.debugLoad(engine: lastAsk, now: tl + 300)
+        both("10b-checkin-last-box") { panel(model, .checkIn) }
+
         // Completed 5 of 6
         let (done, td) = engine([true, false, true, true, true, true])
         model.debugLoad(engine: done, now: td, lastSprint: done.sprint)

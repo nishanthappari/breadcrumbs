@@ -62,6 +62,7 @@ struct CheckInCard: View {
         let answered: Bool? = { if case let .answered(w) = mode { return w } else { return nil } }()
         // While asking, the box being asked about is `currentIndex`; once answered, it's the one before.
         let askedIndex = (s?.currentIndex ?? 0) - (answered == nil ? 0 : 1)
+        let isLastBox = answered == nil && model.isLastBoxCheckIn
 
         return VStack(alignment: .leading, spacing: 18) {
             HStack {
@@ -116,11 +117,26 @@ struct CheckInCard: View {
                 Group {
                     Button("") { model.answer(worked: true) }.keyboardShortcut("y", modifiers: [])
                     Button("") { model.answer(worked: false) }.keyboardShortcut("n", modifiers: [])
+                    if isLastBox {
+                        Button("") { model.answer(worked: true, startNext: true) }.keyboardShortcut("s", modifiers: [])
+                    }
                 }
                 .opacity(0)
                 .allowsHitTesting(false)
             }
             .disabled(answered != nil)
+
+            if isLastBox {
+                // Last box: tick it and roll straight into the next sprint, skipping the summary.
+                Button { model.answer(worked: true, startNext: true) } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "arrow.forward").font(.system(size: 11, weight: .bold))
+                        Text("Yes, start next sprint")
+                        KeyHint(key: "S")
+                    }
+                }
+                .buttonStyle(SecondaryButtonStyle(height: 40))
+            }
         }
         .padding(24)
         .animation(Theme.spring, value: mode)
@@ -136,8 +152,11 @@ struct CheckInCard: View {
 
     private func subline(_ answered: Bool?, askedIndex: Int, total: Int) -> String {
         if answered != nil {
+            // askedIndex is -1 when "start next sprint" rolled straight into a fresh sprint.
+            if askedIndex < 0 { return "Next sprint has started." }
             return askedIndex + 1 < total ? "Box \(askedIndex + 2) has started." : "That was the last box."
         }
+        if askedIndex + 1 >= total { return "Last box. Answer to wrap up, or roll straight into the next sprint." }
         return "No rush. The next box starts when you answer."
     }
 }
