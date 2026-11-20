@@ -38,18 +38,21 @@ struct NudgeView: View {
             Spacer(minLength: 0)
         }
         .padding(Self.shadowPad)
+        .overlay(alignment: .topLeading) {
+            // Spans the whole panel (card plus its transparent margin), so the burst has room
+            // to fly past the card's edges; pieces fade out before the panel's own edges.
+            if let burst = nudge.burst, !reduceMotion {
+                ConfettiView(burst: burst)
+                    .frame(width: WindowCoordinator.panelSize.width, height: WindowCoordinator.panelSize.height)
+                    .allowsHitTesting(false)
+            }
+        }
     }
 
     private var cardBody: some View {
         card
             .frame(width: Self.cardWidth)
-            .overlay(alignment: .topLeading) {
-                if let burst = nudge.burst, !reduceMotion {
-                    ConfettiView(burst: burst)
-                        .frame(width: Self.cardWidth, height: ConfettiView.height)
-                        .allowsHitTesting(false)
-                }
-            }
+
             .background(
                 RoundedRectangle(cornerRadius: 22, style: .continuous).fill(Theme.paper)
                     .shadow(color: Theme.shadow, radius: 20, y: 12)
@@ -289,16 +292,19 @@ struct CompletionCard: View {
     }
 }
 
-/// A short, small confetti burst for a Yes. Lives only while `NudgeState.burst` is set (the
+/// A celebratory confetti burst for a Yes. Lives only while `NudgeState.burst` is set (the
 /// coordinator clears it after `duration`), so its TimelineView never outlives the burst.
+/// Drawn in panel coordinates.
 struct ConfettiView: View {
     let burst: ConfettiBurst
 
-    static let duration: Double = 0.95
-    static let height: CGFloat = 300
-    /// Where the burst comes from, in card coordinates: the top of the Yes button, which in the
-    /// answered state always sits in the left half of the button row.
-    static let origin = CGPoint(x: 24 + (NudgeView.cardWidth - 58) / 4, y: 188)
+    static let duration: Double = 1.15
+    /// Where the burst comes from: the top of the Yes button (in the answered state it always
+    /// sits in the left half of the button row), offset by the panel's shadow margin.
+    static let origin = CGPoint(x: NudgeView.shadowPad + 24 + (NudgeView.cardWidth - 58) / 4,
+                                y: NudgeView.shadowPad + 188)
+    /// Pieces fade out over this distance from the panel's edges, so none is cut off hard.
+    private static let edgeFade: Double = 36
 
     private struct Piece {
         let angle, speed, spin, size: Double
@@ -315,11 +321,12 @@ struct ConfettiView: View {
             seed = seed &* 6_364_136_223_846_793_005 &+ 1_442_695_040_888_963_407
             return Double(seed >> 33) / Double(1 << 31)
         }
-        return (0..<32).map { i in
-            Piece(angle: -.pi / 2 + (r() - 0.5) * 2.2,   // upward fan, ±63°
-                  speed: 240 + r() * 200,
-                  spin: (r() - 0.5) * 14,
-                  size: 4 + r() * 3.5,
+        return (0..<46).map { i in
+            // Upward fan leaning right, toward the open side of the card (-34° to +66°).
+            Piece(angle: -.pi / 2 - 0.6 + r() * 1.75,
+                  speed: 440 + r() * 320,
+                  spin: (r() - 0.5) * 12,
+                  size: 10 + r() * 9,
                   round: i % 3 == 0,
                   color: i % colors.count)
         }
@@ -336,21 +343,28 @@ struct ConfettiView: View {
     }
 
     private func canvas(_ t: Double) -> some View {
-        Canvas { gc, _ in
+        Canvas { gc, size in
             guard t >= 0, t < Self.duration else { return }
-            let gravity = 760.0
-            let drag = 1.0 - min(t, 1) * 0.35
-            let fade = t < 0.55 ? 1 : max(0, 1 - (t - 0.55) / (Self.duration - 0.55))
+            let gravity = 560.0
+            let k = 2.0 // air drag: fast pop, then a slow flutter down
+            let travel = (1 - exp(-k * t)) / k
+            let fade = t < 0.6 ? 1 : max(0, 1 - (t - 0.6) / (Self.duration - 0.6))
             for p in Self.pieces {
-                let x = Self.origin.x + cos(p.angle) * p.speed * t * drag
-                let y = Self.origin.y + sin(p.angle) * p.speed * t * drag + 0.5 * gravity * t * t
+                let x = Self.origin.x + cos(p.angle) * p.speed * travel
+                let y = Self.origin.y + sin(p.angle) * p.speed * travel + 0.5 * gravity * t * t
+                let edge = min(x, y, size.width - x, size.height - y)
+                let edgeAlpha = max(0, min(1, (edge - p.size) / Self.edgeFade))
+                guard edgeAlpha > 0 else { continue }
                 var g = gc
-                g.opacity = fade
+                g.opacity = fade * edgeAlpha
                 g.translateBy(x: x, y: y)
                 g.rotate(by: .radians(p.spin * t))
-                let rect = CGRect(x: -p.size / 2, y: -p.size * 0.3, width: p.size, height: p.size * (p.round ? 1 : 0.6))
-                let shape = p.round ? Path(ellipseIn: CGRect(x: -p.size / 2.4, y: -p.size / 2.4, width: p.size / 1.2, height: p.size / 1.2))
-                                    : Path(roundedRect: rect, cornerRadius: 1)
+                // Flutter: squash one axis as the piece tumbles.
+                g.scaleBy(x: 1, y: max(0.25, abs(cos(p.spin * t * 0.7))))
+                let shape = p.round
+                    ? Path(ellipseIn: CGRect(x: -p.size * 0.4, y: -p.size * 0.4, width: p.size * 0.8, height: p.size * 0.8))
+                    : Path(roundedRect: CGRect(x: -p.size / 2, y: -p.size * 0.3, width: p.size, height: p.size * 0.6),
+                           cornerRadius: 2)
                 g.fill(shape, with: .color(Self.colors[p.color]))
             }
         }

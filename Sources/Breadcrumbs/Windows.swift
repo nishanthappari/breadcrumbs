@@ -63,7 +63,7 @@ final class WindowCoordinator {
         DispatchQueue.main.asyncAfter(deadline: .now() + (completed ? 0.75 : 0.9), execute: work)
     }
 
-    /// A small confetti burst on a Yes (any path: buttons, keys, hotkeys, URL scheme). The
+    /// A confetti burst on a Yes (any path: buttons, keys, hotkeys, URL scheme). The
     /// burst view, and its TimelineView, is removed as soon as it ends.
     private func celebrate() {
         burstWork?.cancel()
@@ -134,14 +134,15 @@ final class WindowCoordinator {
 
     func hidePanel() {
         dismissWork?.cancel()
-        endBurst()
-        guard let p = panel, p.isVisible else { nudge.mode = .hidden; return }
+        guard let p = panel, p.isVisible else { endBurst(); nudge.mode = .hidden; return }
         NSAnimationContext.runAnimationGroup({ ctx in
             ctx.duration = 0.2
             p.animator().alphaValue = 0
         }, completionHandler: { [weak self] in
             MainActor.assumeIsolated {
                 p.orderOut(nil)
+                // The burst rides the fade-out, then stops (its timeline goes with it).
+                self?.endBurst()
                 if self?.nudge.mode != .checkIn { self?.nudge.mode = .hidden }
                 // A check-in may have arrived during the fade.
                 if self?.nudge.mode == .checkIn { self?.presentPanel() }

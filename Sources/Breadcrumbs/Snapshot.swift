@@ -85,7 +85,8 @@ enum FixtureSnapshots {
         answered.answer(worked: true, now: tr + 300)
         model.debugLoad(engine: answered, now: tr + 301)
         both("10-checkin-answered") { panel(model, .answered(worked: true)) }
-        both("10c-checkin-confetti") { panel(model, .answered(worked: true), burstAt: 0.35) }
+        both("10c-checkin-confetti") { panel(model, .answered(worked: true), burstAt: 0.4) }
+        both("10d-checkin-confetti-late") { panel(model, .answered(worked: true), burstAt: 0.85) }
 
         // Check-in on the last box (shows "Yes, start next sprint")
         let (last, tl) = engine([true, false, true, true, true])
@@ -112,7 +113,11 @@ enum FixtureSnapshots {
         let nudge = NudgeState()
         nudge.mode = mode
         if let burstAt { nudge.burst = ConfettiBurst(start: Date(), frozenAt: burstAt) }
-        return NudgeView(model: model, nudge: nudge).frame(width: WindowCoordinator.panelSize.width).fixedSize()
+        // A burst is drawn across the full panel, so render the panel's full height for it.
+        return NudgeView(model: model, nudge: nudge)
+            .frame(width: WindowCoordinator.panelSize.width,
+                   height: burstAt == nil ? nil : WindowCoordinator.panelSize.height, alignment: .top)
+            .fixedSize()
             .background(Color(nsColor: .dynamic(0xDCD8CF, 0x3A3A3C)))
     }
 
