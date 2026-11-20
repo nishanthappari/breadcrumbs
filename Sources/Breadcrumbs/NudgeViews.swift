@@ -6,8 +6,6 @@ import SwiftUI
 final class NudgeState: ObservableObject {
     enum Mode: Equatable { case hidden, checkIn, answered(worked: Bool), completion }
     @Published var mode: Mode = .hidden
-    /// A confetti burst in flight (set on a Yes, cleared when it ends or the panel hides).
-    @Published var burst: ConfettiBurst?
 }
 
 struct ConfettiBurst: Equatable {
@@ -21,7 +19,6 @@ struct NudgeView: View {
     @ObservedObject var model: AppModel
     @ObservedObject var nudge: NudgeState
     var close: () -> Void = {}
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     static let cardWidth: CGFloat = 380
     static let shadowPad: CGFloat = 36
@@ -38,16 +35,11 @@ struct NudgeView: View {
             Spacer(minLength: 0)
         }
         .padding(Self.shadowPad)
-        .overlay(alignment: .topLeading) {
-            // Spans the whole panel (card plus its transparent margin), so the burst has room
-            // to fly past the card's edges; pieces fade out before the panel's own edges.
-            if let burst = nudge.burst, !reduceMotion {
-                ConfettiView(burst: burst)
-                    .frame(width: WindowCoordinator.panelSize.width, height: WindowCoordinator.panelSize.height)
-                    .allowsHitTesting(false)
-            }
-        }
     }
+
+    /// The top-centre of the Yes button in the answered state (it always sits in the left half
+    /// of the button row), in panel coordinates with a top-left origin. Confetti comes from here.
+    static let yesButtonTop = CGPoint(x: shadowPad + 24 + (cardWidth - 58) / 4, y: shadowPad + 188)
 
     private var cardBody: some View {
         card
@@ -120,7 +112,7 @@ struct CheckInCard: View {
                     Button("") { model.answer(worked: true, startNext: isLastBox) }.keyboardShortcut("y", modifiers: [])
                     Button("") { model.answer(worked: false) }.keyboardShortcut("n", modifiers: [])
                     if isLastBox {
-                        Button("") { model.answer(worked: true) }.keyboardShortcut("s", modifiers: [])
+                        Button("") { model.answer(worked: true, stop: true) }.keyboardShortcut("s", modifiers: [])
                     }
                 }
                 .opacity(0)
@@ -161,7 +153,7 @@ struct CheckInCard: View {
     }
 
     /// Last box: the primary action ticks it and rolls straight into the next sprint
-    /// (skipping the summary); "Yes, and stop" ticks it and shows the summary.
+    /// (skipping the summary); "Yes, and stop" ticks it, ends the sprint and closes the card.
     private var lastBoxButtons: some View {
         VStack(spacing: 10) {
             Button { model.answer(worked: true, startNext: true) } label: {
@@ -174,7 +166,7 @@ struct CheckInCard: View {
             .buttonStyle(PrimaryButtonStyle(height: 40))
             .keyboardShortcut(.defaultAction)
             HStack(spacing: 10) {
-                Button { model.answer(worked: true) } label: {
+                Button { model.answer(worked: true, stop: true) } label: {
                     HStack(spacing: 8) {
                         Text("Yes, and stop")
                         KeyHint(key: "S")
@@ -292,19 +284,17 @@ struct CompletionCard: View {
     }
 }
 
-/// A celebratory confetti burst for a Yes. Lives only while `NudgeState.burst` is set (the
-/// coordinator clears it after `duration`), so its TimelineView never outlives the burst.
-/// Drawn in panel coordinates.
+/// A celebratory confetti burst for a Yes, drawn in its own transparent overlay window (see
+/// `ConfettiOverlay`) so it can fly well past the check-in card. The window, and with it this
+/// view's TimelineView, exists only for the length of the burst.
 struct ConfettiView: View {
     let burst: ConfettiBurst
+    /// Where the burst comes from, in this view's coordinates (top-left origin).
+    let origin: CGPoint
 
-    static let duration: Double = 1.15
-    /// Where the burst comes from: the top of the Yes button (in the answered state it always
-    /// sits in the left half of the button row), offset by the panel's shadow margin.
-    static let origin = CGPoint(x: NudgeView.shadowPad + 24 + (NudgeView.cardWidth - 58) / 4,
-                                y: NudgeView.shadowPad + 188)
-    /// Pieces fade out over this distance from the panel's edges, so none is cut off hard.
-    private static let edgeFade: Double = 36
+    static let duration: Double = 1.5
+    /// Pieces fade out within this distance of the view's edges, so none is cut off hard.
+    private static let edgeFade: Double = 40
 
     private struct Piece {
         let angle, speed, spin, size: Double
@@ -321,14 +311,16 @@ struct ConfettiView: View {
             seed = seed &* 6_364_136_223_846_793_005 &+ 1_442_695_040_888_963_407
             return Double(seed >> 33) / Double(1 << 31)
         }
-        return (0..<46).map { i in
-            // Upward fan leaning right, toward the open side of the card (-34° to +66°).
-            Piece(angle: -.pi / 2 - 0.6 + r() * 1.75,
-                  speed: 440 + r() * 320,
-                  spin: (r() - 0.5) * 12,
-                  size: 10 + r() * 9,
-                  round: i % 3 == 0,
-                  color: i % colors.count)
+        return (0..<100).map { i in
+            // All the way round, a little stronger upward so it blooms before it falls.
+            let angle = r() * 2 * .pi
+            let upward = max(0, -sin(angle))
+            return Piece(angle: angle,
+                         speed: (160 + pow(r(), 0.6) * 900) * (1 + 0.25 * upward), // a filled bloom, not a ring
+                         spin: (r() - 0.5) * 12,
+                         size: 10 + r() * 9,
+                         round: i % 3 == 0,
+                         color: i % colors.count)
         }
     }()
 
@@ -345,13 +337,14 @@ struct ConfettiView: View {
     private func canvas(_ t: Double) -> some View {
         Canvas { gc, size in
             guard t >= 0, t < Self.duration else { return }
-            let gravity = 560.0
-            let k = 2.0 // air drag: fast pop, then a slow flutter down
+            // Linear air drag: a fast pop that slows to a flutter, falling at a terminal speed.
+            let k = 2.2, gravity = 900.0
             let travel = (1 - exp(-k * t)) / k
-            let fade = t < 0.6 ? 1 : max(0, 1 - (t - 0.6) / (Self.duration - 0.6))
+            let fall = gravity / k * (t - travel)
+            let fade = t < 0.9 ? 1 : max(0, 1 - (t - 0.9) / (Self.duration - 0.9))
             for p in Self.pieces {
-                let x = Self.origin.x + cos(p.angle) * p.speed * travel
-                let y = Self.origin.y + sin(p.angle) * p.speed * travel + 0.5 * gravity * t * t
+                let x = origin.x + cos(p.angle) * p.speed * travel
+                let y = origin.y + sin(p.angle) * p.speed * travel + fall
                 let edge = min(x, y, size.width - x, size.height - y)
                 let edgeAlpha = max(0, min(1, (edge - p.size) / Self.edgeFade))
                 guard edgeAlpha > 0 else { continue }

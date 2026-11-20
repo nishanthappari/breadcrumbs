@@ -119,9 +119,10 @@ final class AppModel: ObservableObject {
     func pause() { if case .running = engine.phase { togglePause() } }
     func resume() { if engine.isPaused { togglePause() } }
 
-    /// Answers the check-in. With `startNext`, answering the last box skips the completion
-    /// card and starts a fresh sprint straight away (ignored on any other box).
-    func answer(worked: Bool, startNext: Bool = false) {
+    /// Answers the check-in. On the last box (both are ignored on any other box):
+    /// `startNext` skips the completion card and starts a fresh sprint straight away;
+    /// `stop` ends the sprint and closes the card, with no completion card either.
+    func answer(worked: Bool, startNext: Bool = false, stop: Bool = false) {
         let t = Date()
         guard let record = engine.answer(worked: worked, now: t) else { return }
         clock.set(t)
@@ -136,6 +137,12 @@ final class AppModel: ObservableObject {
             // Show the brief "Ticked." beat, then let it fade; no completion card.
             onAnswered?(worked, false)
             startSprint()
+            return
+        }
+        if completed && stop {
+            // Same beat, then the card closes and the app goes back to idle.
+            onAnswered?(worked, false)
+            dismissCompletion()
             return
         }
         onAnswered?(worked, completed)

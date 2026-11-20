@@ -85,8 +85,8 @@ enum FixtureSnapshots {
         answered.answer(worked: true, now: tr + 300)
         model.debugLoad(engine: answered, now: tr + 301)
         both("10-checkin-answered") { panel(model, .answered(worked: true)) }
-        both("10c-checkin-confetti") { panel(model, .answered(worked: true), burstAt: 0.4) }
-        both("10d-checkin-confetti-late") { panel(model, .answered(worked: true), burstAt: 0.85) }
+        both("10c-checkin-confetti") { confettiScene(model, at: 0.35) }
+        both("10d-checkin-confetti-late") { confettiScene(model, at: 0.9) }
 
         // Check-in on the last box (shows "Yes, start next sprint")
         let (last, tl) = engine([true, false, true, true, true])
@@ -109,16 +109,27 @@ enum FixtureSnapshots {
         print("Rendered fixtures to \(base.path)")
     }
 
-    static func panel(_ model: AppModel, _ mode: NudgeState.Mode, burstAt: Double? = nil) -> some View {
+    static func panel(_ model: AppModel, _ mode: NudgeState.Mode) -> some View {
         let nudge = NudgeState()
         nudge.mode = mode
-        if let burstAt { nudge.burst = ConfettiBurst(start: Date(), frozenAt: burstAt) }
-        // A burst is drawn across the full panel, so render the panel's full height for it.
-        return NudgeView(model: model, nudge: nudge)
-            .frame(width: WindowCoordinator.panelSize.width,
-                   height: burstAt == nil ? nil : WindowCoordinator.panelSize.height, alignment: .top)
-            .fixedSize()
+        return NudgeView(model: model, nudge: nudge).frame(width: WindowCoordinator.panelSize.width).fixedSize()
             .background(Color(nsColor: .dynamic(0xDCD8CF, 0x3A3A3C)))
+    }
+
+    /// A frozen confetti frame as it appears on screen: the panel near the top of the screen
+    /// and the overlay window (1400pt wide, centred on the Yes button) drawn over it.
+    static func confettiScene(_ model: AppModel, at t: Double) -> some View {
+        let size = CGSize(width: 1400, height: 1000)
+        let origin = CGPoint(x: size.width / 2, y: 30 + NudgeView.yesButtonTop.y)
+        let nudge = NudgeState()
+        nudge.mode = .answered(worked: true)
+        return ZStack(alignment: .topLeading) {
+            Color(nsColor: .dynamic(0xDCD8CF, 0x3A3A3C))
+            NudgeView(model: model, nudge: nudge).frame(width: WindowCoordinator.panelSize.width).fixedSize()
+                .offset(x: origin.x - NudgeView.yesButtonTop.x, y: 30)
+            ConfettiView(burst: ConfettiBurst(start: Date(), frozenAt: t), origin: origin)
+        }
+        .frame(width: size.width, height: size.height)
     }
 
     static func menuBarStrip(_ model: AppModel) -> some View {

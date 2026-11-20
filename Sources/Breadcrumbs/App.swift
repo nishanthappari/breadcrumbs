@@ -80,7 +80,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             checkInHotKeys.append(HotKey(keyCode: kVK_ANSI_S, display: CheckInShortcut.stop) { [weak self] in
                 MainActor.assumeIsolated {
                     guard let model = self?.model, model.isLastBoxCheckIn else { return }
-                    model.answer(worked: true)
+                    model.answer(worked: true, stop: true)
                 }
             })
         }
@@ -150,9 +150,10 @@ final class URLRouter {
         case "today", "history": coordinator.showHistory()
         case "answer", "checkin":
             let v = (q["worked"] ?? q["answer"] ?? "").lowercased()
-            // breadcrumbs://answer?worked=yes&next=1 — on the last box, roll into a new sprint.
-            let next = ["1", "true", "yes"].contains((q["next"] ?? "").lowercased())
-            model.answer(worked: ["yes", "y", "true", "1"].contains(v), startNext: next)
+            // breadcrumbs://answer?worked=yes&next=1 — on the last box, roll into a new sprint;
+            // &stop=1 ends the sprint and closes the card instead of showing the summary.
+            let flag = { (k: String) in ["1", "true", "yes"].contains((q[k] ?? "").lowercased()) }
+            model.answer(worked: ["yes", "y", "true", "1"].contains(v), startNext: flag("next"), stop: flag("stop"))
         case "done": coordinator.closeCompletion()
         case "settings":
             if let m = q["interval"].flatMap(Int.init) { model.setInterval(m) }

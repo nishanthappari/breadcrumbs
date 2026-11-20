@@ -7,6 +7,57 @@ final class NudgePanel: NSPanel {
     override var canBecomeMain: Bool { false }
 }
 
+/// The panel never takes focus on its own, so its buttons must act on the very first click
+/// rather than spending it on making the panel key.
+final class FirstClickHostingView<Content: View>: NSHostingView<Content> {
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+}
+
+/// A transparent, click-through window that exists only for the length of one confetti burst,
+/// so the burst can fly far past the check-in panel.
+@MainActor
+final class ConfettiOverlay {
+    private var window: NSWindow?
+    private var endWork: DispatchWorkItem?
+
+    /// Bursts from `point` (screen coordinates), drawn above windows at `level`.
+    func burst(from point: NSPoint, on screen: NSScreen, above level: NSWindow.Level) {
+        end()
+        // Room for the full spread: ~700pt each side, ~500pt up and ~800pt down for the fall.
+        let frame = NSRect(x: point.x - 700, y: point.y - 800, width: 1400, height: 1300)
+            .intersection(screen.frame)
+        guard !frame.isEmpty else { return }
+        let w = NSWindow(contentRect: frame, styleMask: [.borderless], backing: .buffered, defer: false)
+        w.isOpaque = false
+        w.backgroundColor = .clear
+        w.hasShadow = false
+        w.ignoresMouseEvents = true
+        w.isReleasedWhenClosed = false
+        w.level = NSWindow.Level(rawValue: level.rawValue + 1)
+        w.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient, .ignoresCycle]
+        w.identifier = NSUserInterfaceItemIdentifier("confetti")
+        let origin = CGPoint(x: point.x - frame.minX, y: frame.maxY - point.y)
+        let host = NSHostingView(rootView: ConfettiView(burst: ConfettiBurst(start: Date()), origin: origin))
+        host.frame = NSRect(origin: .zero, size: frame.size)
+        w.contentView = host
+        w.orderFrontRegardless()
+        window = w
+        let work = DispatchWorkItem { [weak self] in self?.end() }
+        endWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + ConfettiView.duration + 0.05, execute: work)
+    }
+
+    /// Tears the window down; the hosting view and its TimelineView go with it.
+    func end() {
+        endWork?.cancel()
+        endWork = nil
+        guard let w = window else { return }
+        w.orderOut(nil)
+        w.contentView = nil
+        window = nil
+    }
+}
+
 /// Owns the floating check-in / completion card and the History window.
 @MainActor
 final class WindowCoordinator {
@@ -44,7 +95,10 @@ final class WindowCoordinator {
         if model.engine.isAwaitingCheckIn { showCheckIn(focus: true) }
     }
 
-    private var burstWork: DispatchWorkItem?
+    private let confetti = ConfettiOverlay()
+    /// How long the completion card stays before it closes itself (it never has focus, so
+    /// Return/Esc can't reach it unless clicked).
+    static let completionAutoDismiss: TimeInterval = 6
 
     private func answered(worked: Bool, completed: Bool) {
         dismissWork?.cancel()
@@ -55,6 +109,7 @@ final class WindowCoordinator {
             if completed {
                 withAnimation(.easeInOut(duration: 0.25)) { self.nudge.mode = .completion }
                 self.presentPanel()
+                self.scheduleCompletionDismiss()
             } else if case .answered = self.nudge.mode {
                 self.hidePanel()
             }
@@ -63,22 +118,25 @@ final class WindowCoordinator {
         DispatchQueue.main.asyncAfter(deadline: .now() + (completed ? 0.75 : 0.9), execute: work)
     }
 
-    /// A confetti burst on a Yes (any path: buttons, keys, hotkeys, URL scheme). The
-    /// burst view, and its TimelineView, is removed as soon as it ends.
+    /// A confetti burst on a Yes (any path: buttons, keys, hotkeys, URL scheme), from the Yes
+    /// button, in its own short-lived overlay window.
     private func celebrate() {
-        burstWork?.cancel()
         guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion,
-              panel?.isVisible == true else { return }
-        nudge.burst = ConfettiBurst(start: Date())
-        let work = DispatchWorkItem { [weak self] in self?.endBurst() }
-        burstWork = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + ConfettiView.duration + 0.05, execute: work)
+              let p = panel, p.isVisible, let screen = p.screen ?? NSScreen.main else { return }
+        let point = NSPoint(x: p.frame.minX + NudgeView.yesButtonTop.x,
+                            y: p.frame.maxY - NudgeView.yesButtonTop.y)
+        confetti.burst(from: point, on: screen, above: p.level)
     }
 
-    private func endBurst() {
-        burstWork?.cancel()
-        burstWork = nil
-        if nudge.burst != nil { nudge.burst = nil }
+    /// Closes the completion card by itself after a few seconds, back to idle.
+    private func scheduleCompletionDismiss() {
+        dismissWork?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, self.nudge.mode == .completion, self.model.engine.phase == .completed else { return }
+            self.closeCompletion()
+        }
+        dismissWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.completionAutoDismiss, execute: work)
     }
 
     func closeCompletion() {
@@ -99,7 +157,7 @@ final class WindowCoordinator {
         p.isMovableByWindowBackground = true
         p.isReleasedWhenClosed = false
         p.identifier = NSUserInterfaceItemIdentifier("nudge")
-        let host = NSHostingView(rootView: NudgeView(model: model, nudge: nudge) { [weak self] in self?.closeCompletion() })
+        let host = FirstClickHostingView(rootView: NudgeView(model: model, nudge: nudge) { [weak self] in self?.closeCompletion() })
         host.frame = NSRect(origin: .zero, size: Self.panelSize)
         p.contentView = host
         return p
@@ -134,15 +192,13 @@ final class WindowCoordinator {
 
     func hidePanel() {
         dismissWork?.cancel()
-        guard let p = panel, p.isVisible else { endBurst(); nudge.mode = .hidden; return }
+        guard let p = panel, p.isVisible else { nudge.mode = .hidden; return }
         NSAnimationContext.runAnimationGroup({ ctx in
             ctx.duration = 0.2
             p.animator().alphaValue = 0
         }, completionHandler: { [weak self] in
             MainActor.assumeIsolated {
                 p.orderOut(nil)
-                // The burst rides the fade-out, then stops (its timeline goes with it).
-                self?.endBurst()
                 if self?.nudge.mode != .checkIn { self?.nudge.mode = .hidden }
                 // A check-in may have arrived during the fade.
                 if self?.nudge.mode == .checkIn { self?.presentPanel() }

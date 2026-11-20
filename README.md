@@ -52,7 +52,7 @@ Look for the small box icon in your menu bar.
 | To do this | Do this |
 |---|---|
 | Start a sprint | Click the box in the menu bar → **Start sprint**, or press **⌃⌥B** (Control-Option-B) from anywhere |
-| Answer a check-in | Click **Yes** or **No** on the card, or from any app press **⌃⌥Y** (yes) or **⌃⌥N** (no). On the last box, **⌃⌥Y** ticks it and starts the next sprint, and **⌃⌥S** ticks it and stops. You can also press ⌃⌥B to focus the card, then **Y**, **N**, **S** or **Return** |
+| Answer a check-in | Click **Yes** or **No** on the card, or from any app press **⌃⌥Y** (yes) or **⌃⌥N** (no). On the last box, **⌃⌥Y** ticks it and starts the next sprint, and **⌃⌥S** ticks it, stops and closes the card. You can also press ⌃⌥B to focus the card, then **Y**, **N**, **S** or **Return** |
 | Pause, resume or cancel | Click the menu bar icon during a sprint |
 | Change box length or count | Menu bar → **Settings**: 1–60 minutes per box, 1–24 boxes per sprint |
 | See your history | Menu bar → **History**: today's count and the last 7 days |
@@ -96,7 +96,8 @@ scripts/build_app.sh --package   # build/Breadcrumbs.zip for a GitHub release
 ### URL scheme
 
 Other tools can control the app with `breadcrumbs://` URLs: `start`, `pause`, `resume`, `toggle`,
-`cancel`, `today` (opens History), `answer?worked=yes|no`, `done`, and
+`cancel`, `today` (opens History), `answer?worked=yes|no` (on the last box, add `&next=1` to
+start the next sprint or `&stop=1` to stop and close the card), `done`, and
 `settings?interval=5&boxes=6`. For example, `open breadcrumbs://start`.
 
 ### Raycast (optional)
