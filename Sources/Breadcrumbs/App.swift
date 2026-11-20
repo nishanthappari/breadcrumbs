@@ -1,5 +1,7 @@
 import AppKit
 import BreadcrumbsCore
+import Carbon.HIToolbox
+import Combine
 import SwiftUI
 
 struct BreadcrumbsApp: App {
@@ -21,6 +23,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     lazy var coordinator = WindowCoordinator(model: model)
     lazy var router = URLRouter(model: model, coordinator: coordinator)
     private var hotKey: HotKey?
+    /// ⌃⌥Y / ⌃⌥N (and ⌃⌥S on the last box), alive only while a check-in is pending.
+    private var checkInHotKeys: [HotKey] = []
+    private var checkInKeysWanted: CheckInKeys = .none
+    private var engineObserver: AnyCancellable?
+
+    private enum CheckInKeys { case none, yesNo, yesNoNext }
 
     func applicationWillFinishLaunching(_ notification: Notification) {
         installURLHandler()
@@ -36,7 +44,44 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             MainActor.assumeIsolated { self?.hotKeyPressed() }
         }
         model.hotKeyRegistered = hotKey?.isRegistered ?? false
+        // `$engine` emits the new value on every engine change (before views update), so the
+        // check-in shortcuts come and go with the awaitingCheckIn phase however it's left.
+        engineObserver = model.$engine.sink { [weak self] engine in
+            MainActor.assumeIsolated { self?.syncCheckInHotKeys(engine) }
+        }
         model.writeStatus()
+    }
+
+    private func syncCheckInHotKeys(_ engine: SprintEngine) {
+        let wanted: CheckInKeys
+        if engine.isAwaitingCheckIn, let s = engine.sprint {
+            wanted = s.currentIndex == s.config.boxes - 1 ? .yesNoNext : .yesNo
+        } else {
+            wanted = .none
+        }
+        guard wanted != checkInKeysWanted else { return }
+        checkInKeysWanted = wanted
+        checkInHotKeys.forEach { $0.unregister() }
+        checkInHotKeys = []
+        if wanted != .none {
+            // Actions re-check the phase: a press queued just as the check-in closed is a no-op.
+            checkInHotKeys.append(HotKey(keyCode: kVK_ANSI_Y, display: CheckInShortcut.yes) { [weak self] in
+                MainActor.assumeIsolated { self?.model.answer(worked: true) }
+            })
+            checkInHotKeys.append(HotKey(keyCode: kVK_ANSI_N, display: CheckInShortcut.no) { [weak self] in
+                MainActor.assumeIsolated { self?.model.answer(worked: false) }
+            })
+        }
+        if wanted == .yesNoNext {
+            checkInHotKeys.append(HotKey(keyCode: kVK_ANSI_S, display: CheckInShortcut.next) { [weak self] in
+                MainActor.assumeIsolated {
+                    guard let model = self?.model, model.isLastBoxCheckIn else { return }
+                    model.answer(worked: true, startNext: true)
+                }
+            })
+        }
+        model.checkInHotKeys = checkInHotKeys.filter(\.isRegistered).map(\.display)
+        model.unavailableCheckInHotKeys = Set(checkInHotKeys.filter { !$0.isRegistered }.map(\.display))
     }
 
     private func hotKeyPressed() {

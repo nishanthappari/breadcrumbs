@@ -137,9 +137,34 @@ struct CheckInCard: View {
                 }
                 .buttonStyle(SecondaryButtonStyle(height: 40))
             }
+
+            if answered == nil {
+                globalHints(isLastBox: isLastBox)
+            }
         }
         .padding(24)
         .animation(Theme.spring, value: mode)
+    }
+
+    /// The global shortcuts that answer from any app, without focusing the card first.
+    @ViewBuilder private func globalHints(isLastBox: Bool) -> some View {
+        let hints = [(CheckInShortcut.yes, "yes"), (CheckInShortcut.no, "no")]
+            + (isLastBox ? [(CheckInShortcut.next, "next sprint")] : [])
+        let shown = hints.filter { !model.unavailableCheckInHotKeys.contains($0.0) }
+        if !shown.isEmpty {
+            HStack(spacing: 10) {
+                Text("From any app")
+                    .foregroundStyle(Theme.inkSoft.opacity(0.8))
+                ForEach(shown, id: \.0) { key, label in
+                    HStack(spacing: 5) {
+                        KeyHint(key: key)
+                        Text(label).foregroundStyle(Theme.inkSoft)
+                    }
+                }
+            }
+            .font(Theme.ui(11))
+            .padding(.top, -6)
+        }
     }
 
     private func headline(_ answered: Bool?) -> String {

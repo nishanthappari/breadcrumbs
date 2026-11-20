@@ -30,6 +30,10 @@ final class AppModel: ObservableObject {
     var onSprintStarted: (() -> Void)?
     var onCancelled: (() -> Void)?
     var hotKeyRegistered = false
+    /// Check-in shortcuts registered right now (empty unless a check-in is pending).
+    var checkInHotKeys: [String] = []
+    /// Check-in shortcuts that failed to register (taken by another app); the card hides them.
+    var unavailableCheckInHotKeys: Set<String> = []
 
     private var fastTimer: Timer?
     private var slowTimer: Timer?
@@ -274,6 +278,7 @@ final class AppModel: ObservableObject {
             "loginItemStatus": LoginItem.statusDescription,
             "updatedAt": ISO8601DateFormatter().string(from: Date()),
             "hotKeyRegistered": hotKeyRegistered,
+            "checkInHotKeys": checkInHotKeys,
         ]
         if let s = engine.sprint {
             dict["boxes"] = s.boxes.map(\.rawValue)

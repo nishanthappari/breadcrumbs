@@ -54,32 +54,76 @@ enum LoginItem {
     }
 }
 
+/// Global shortcuts that answer a pending check-in from any app. Registered only while a
+/// check-in is waiting, so they never shadow ⌃⌥Y/N/S in other apps the rest of the time.
+enum CheckInShortcut {
+    static let yes = "⌃⌥Y"
+    static let no = "⌃⌥N"
+    static let next = "⌃⌥S"
+}
+
 /// A system-wide shortcut via Carbon's RegisterEventHotKey (no Accessibility permission needed).
+/// Several can coexist: each gets its own EventHotKeyID, and one shared app-level handler
+/// routes a press to the instance whose id fired. Unregistered when the instance is released.
+/// Main thread only.
 final class HotKey {
     static let displayString = "⌃⌥B"
 
+    private static let signature = OSType(0x4252_4443) // 'BRDC'
+    private static var nextID: UInt32 = 1
+    private static var actions: [UInt32: () -> Void] = [:]
+    private static var handlerInstalled = false
+
+    let display: String
+    private let id: UInt32
     private var ref: EventHotKeyRef?
     private(set) var isRegistered = false
-    private var handlerRef: EventHandlerRef?
-    private let action: () -> Void
 
-    init(keyCode: Int = kVK_ANSI_B, modifiers: Int = controlKey | optionKey, action: @escaping () -> Void) {
-        self.action = action
-        var spec = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
-        let selfPtr = Unmanaged.passUnretained(self).toOpaque()
-        InstallEventHandler(GetApplicationEventTarget(), { _, _, userData in
-            guard let userData else { return noErr }
-            Unmanaged<HotKey>.fromOpaque(userData).takeUnretainedValue().action()
-            return noErr
-        }, 1, &spec, selfPtr, &handlerRef)
-        let id = EventHotKeyID(signature: OSType(0x4252_4443), id: 1) // 'BRDC'
-        let status = RegisterEventHotKey(UInt32(keyCode), UInt32(modifiers), id, GetApplicationEventTarget(), 0, &ref)
+    init(keyCode: Int = kVK_ANSI_B, modifiers: Int = controlKey | optionKey,
+         display: String = HotKey.displayString, action: @escaping () -> Void) {
+        self.display = display
+        id = Self.nextID
+        Self.nextID += 1
+        guard Self.installHandler() else { return }
+        let hotKeyID = EventHotKeyID(signature: Self.signature, id: id)
+        let status = RegisterEventHotKey(UInt32(keyCode), UInt32(modifiers), hotKeyID,
+                                         GetApplicationEventTarget(), 0, &ref)
         isRegistered = status == noErr
-        if !isRegistered { NSLog("Breadcrumbs: hotkey registration failed (\(status))") }
+        if isRegistered {
+            Self.actions[id] = action
+        } else {
+            ref = nil
+            NSLog("Breadcrumbs: hotkey \(display) registration failed (\(status)), likely taken by another app")
+        }
     }
 
-    deinit {
+    /// Releases the shortcut so other apps get the keystroke again.
+    func unregister() {
+        Self.actions[id] = nil
         if let ref { UnregisterEventHotKey(ref) }
-        if let handlerRef { RemoveEventHandler(handlerRef) }
+        ref = nil
+        isRegistered = false
+    }
+
+    deinit { unregister() }
+
+    /// Installs the one shared handler (kept for the app's lifetime).
+    private static func installHandler() -> Bool {
+        if handlerInstalled { return true }
+        var spec = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
+        let status = InstallEventHandler(GetApplicationEventTarget(), { _, event, _ in
+            guard let event else { return OSStatus(eventNotHandledErr) }
+            var hk = EventHotKeyID()
+            let err = GetEventParameter(event, EventParamName(kEventParamDirectObject), EventParamType(typeEventHotKeyID),
+                                        nil, MemoryLayout<EventHotKeyID>.size, nil, &hk)
+            guard err == noErr, hk.signature == HotKey.signature else { return OSStatus(eventNotHandledErr) }
+            let fired = hk.id
+            // Run after the Carbon callback returns, so an action may unregister hotkeys safely.
+            DispatchQueue.main.async { HotKey.actions[fired]?() }
+            return noErr
+        }, 1, &spec, nil, nil)
+        handlerInstalled = status == noErr
+        if !handlerInstalled { NSLog("Breadcrumbs: hotkey handler install failed (\(status))") }
+        return handlerInstalled
     }
 }
