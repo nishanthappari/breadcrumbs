@@ -6,6 +6,14 @@ import SwiftUI
 final class NudgeState: ObservableObject {
     enum Mode: Equatable { case hidden, checkIn, answered(worked: Bool), completion }
     @Published var mode: Mode = .hidden
+    /// A confetti burst in flight (set on a Yes, cleared when it ends or the panel hides).
+    @Published var burst: ConfettiBurst?
+}
+
+struct ConfettiBurst: Equatable {
+    let start: Date
+    /// Snapshot fixtures only: draw this one moment, with no timeline running.
+    var frozenAt: Double?
 }
 
 /// The floating card: check-in, the brief "answered" beat, and the completion screen.
@@ -13,6 +21,7 @@ struct NudgeView: View {
     @ObservedObject var model: AppModel
     @ObservedObject var nudge: NudgeState
     var close: () -> Void = {}
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     static let cardWidth: CGFloat = 380
     static let shadowPad: CGFloat = 36
@@ -34,6 +43,13 @@ struct NudgeView: View {
     private var cardBody: some View {
         card
             .frame(width: Self.cardWidth)
+            .overlay(alignment: .topLeading) {
+                if let burst = nudge.burst, !reduceMotion {
+                    ConfettiView(burst: burst)
+                        .frame(width: Self.cardWidth, height: ConfettiView.height)
+                        .allowsHitTesting(false)
+                }
+            }
             .background(
                 RoundedRectangle(cornerRadius: 22, style: .continuous).fill(Theme.paper)
                     .shadow(color: Theme.shadow, radius: 20, y: 12)
@@ -91,52 +107,23 @@ struct CheckInCard: View {
                     .foregroundStyle(Theme.inkSoft)
             }
 
-            HStack(spacing: 10) {
-                Button { model.answer(worked: true) } label: {
-                    HStack(spacing: 8) {
-                        if answered == true { Image(systemName: "checkmark").font(.system(size: 12, weight: .bold)) }
-                        Text("Yes")
-                        if answered == nil { KeyHint(key: "Y", onFill: true) }
-                    }
-                }
-                .buttonStyle(PrimaryButtonStyle(height: 40))
-                .keyboardShortcut(.defaultAction)
-                .opacity(answered == false ? 0 : 1)
-                Button { model.answer(worked: false) } label: {
-                    HStack(spacing: 8) {
-                        if answered == false { Image(systemName: "checkmark").font(.system(size: 12, weight: .bold)) }
-                        Text("No")
-                        if answered == nil { KeyHint(key: "N") }
-                    }
-                }
-                .buttonStyle(SecondaryButtonStyle(height: 40))
-                .opacity(answered == true ? 0 : 1)
+            Group {
+                if isLastBox { lastBoxButtons } else { buttons(answered) }
             }
             .background {
-                // Plain-letter shortcuts (Return is already the default action).
+                // Plain-letter shortcuts (Return is already the default action). On the last
+                // box Y rolls into the next sprint and S ticks it and stops.
                 Group {
-                    Button("") { model.answer(worked: true) }.keyboardShortcut("y", modifiers: [])
+                    Button("") { model.answer(worked: true, startNext: isLastBox) }.keyboardShortcut("y", modifiers: [])
                     Button("") { model.answer(worked: false) }.keyboardShortcut("n", modifiers: [])
                     if isLastBox {
-                        Button("") { model.answer(worked: true, startNext: true) }.keyboardShortcut("s", modifiers: [])
+                        Button("") { model.answer(worked: true) }.keyboardShortcut("s", modifiers: [])
                     }
                 }
                 .opacity(0)
                 .allowsHitTesting(false)
             }
             .disabled(answered != nil)
-
-            if isLastBox {
-                // Last box: tick it and roll straight into the next sprint, skipping the summary.
-                Button { model.answer(worked: true, startNext: true) } label: {
-                    HStack(spacing: 8) {
-                        Image(systemName: "arrow.forward").font(.system(size: 11, weight: .bold))
-                        Text("Yes, start next sprint")
-                        KeyHint(key: "S")
-                    }
-                }
-                .buttonStyle(SecondaryButtonStyle(height: 40))
-            }
 
             if answered == nil {
                 globalHints(isLastBox: isLastBox)
@@ -146,10 +133,67 @@ struct CheckInCard: View {
         .animation(Theme.spring, value: mode)
     }
 
+    private func buttons(_ answered: Bool?) -> some View {
+        HStack(spacing: 10) {
+            Button { model.answer(worked: true) } label: {
+                HStack(spacing: 8) {
+                    if answered == true { Image(systemName: "checkmark").font(.system(size: 12, weight: .bold)) }
+                    Text("Yes")
+                    if answered == nil { KeyHint(key: "Y", onFill: true) }
+                }
+            }
+            .buttonStyle(PrimaryButtonStyle(height: 40))
+            .keyboardShortcut(.defaultAction)
+            .opacity(answered == false ? 0 : 1)
+            Button { model.answer(worked: false) } label: {
+                HStack(spacing: 8) {
+                    if answered == false { Image(systemName: "checkmark").font(.system(size: 12, weight: .bold)) }
+                    Text("No")
+                    if answered == nil { KeyHint(key: "N") }
+                }
+            }
+            .buttonStyle(SecondaryButtonStyle(height: 40))
+            .opacity(answered == true ? 0 : 1)
+        }
+    }
+
+    /// Last box: the primary action ticks it and rolls straight into the next sprint
+    /// (skipping the summary); "Yes, and stop" ticks it and shows the summary.
+    private var lastBoxButtons: some View {
+        VStack(spacing: 10) {
+            Button { model.answer(worked: true, startNext: true) } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "arrow.forward").font(.system(size: 11, weight: .bold))
+                    Text("Yes, start next sprint")
+                    KeyHint(key: "Y", onFill: true)
+                }
+            }
+            .buttonStyle(PrimaryButtonStyle(height: 40))
+            .keyboardShortcut(.defaultAction)
+            HStack(spacing: 10) {
+                Button { model.answer(worked: true) } label: {
+                    HStack(spacing: 8) {
+                        Text("Yes, and stop")
+                        KeyHint(key: "S")
+                    }
+                }
+                .buttonStyle(SecondaryButtonStyle(height: 40))
+                Button { model.answer(worked: false) } label: {
+                    HStack(spacing: 8) {
+                        Text("No")
+                        KeyHint(key: "N")
+                    }
+                }
+                .buttonStyle(SecondaryButtonStyle(height: 40))
+            }
+        }
+    }
+
     /// The global shortcuts that answer from any app, without focusing the card first.
     @ViewBuilder private func globalHints(isLastBox: Bool) -> some View {
-        let hints = [(CheckInShortcut.yes, "yes"), (CheckInShortcut.no, "no")]
-            + (isLastBox ? [(CheckInShortcut.next, "next sprint")] : [])
+        let hints = isLastBox
+            ? [(CheckInShortcut.yes, "next sprint"), (CheckInShortcut.no, "no"), (CheckInShortcut.stop, "stop")]
+            : [(CheckInShortcut.yes, "yes"), (CheckInShortcut.no, "no")]
         let shown = hints.filter { !model.unavailableCheckInHotKeys.contains($0.0) }
         if !shown.isEmpty {
             HStack(spacing: 10) {
@@ -181,7 +225,7 @@ struct CheckInCard: View {
             if askedIndex < 0 { return "Next sprint has started." }
             return askedIndex + 1 < total ? "Box \(askedIndex + 2) has started." : "That was the last box."
         }
-        if askedIndex + 1 >= total { return "Last box. Answer to wrap up, or roll straight into the next sprint." }
+        if askedIndex + 1 >= total { return "Last box. Roll straight into the next sprint, or stop here." }
         return "No rush. The next box starts when you answer."
     }
 }
@@ -242,5 +286,73 @@ struct CompletionCard: View {
         if worked == 0 { return "No ticks this time. Showing up still counts." }
         let missed = total - worked
         return "\(real) of real work. \(missed == 1 ? "1 box" : "\(missed) boxes") got away."
+    }
+}
+
+/// A short, small confetti burst for a Yes. Lives only while `NudgeState.burst` is set (the
+/// coordinator clears it after `duration`), so its TimelineView never outlives the burst.
+struct ConfettiView: View {
+    let burst: ConfettiBurst
+
+    static let duration: Double = 0.95
+    static let height: CGFloat = 300
+    /// Where the burst comes from, in card coordinates: the top of the Yes button, which in the
+    /// answered state always sits in the left half of the button row.
+    static let origin = CGPoint(x: 24 + (NudgeView.cardWidth - 58) / 4, y: 188)
+
+    private struct Piece {
+        let angle, speed, spin, size: Double
+        let round: Bool
+        let color: Int
+    }
+
+    private static let colors: [Color] = [Theme.tick, Theme.tickPressed, Theme.tick.opacity(0.5), Theme.missed, Theme.missedInk]
+
+    /// Deterministic pieces (a fixed LCG), so every burst and every snapshot looks the same.
+    private static let pieces: [Piece] = {
+        var seed: UInt64 = 0x9E37_79B9
+        func r() -> Double {
+            seed = seed &* 6_364_136_223_846_793_005 &+ 1_442_695_040_888_963_407
+            return Double(seed >> 33) / Double(1 << 31)
+        }
+        return (0..<32).map { i in
+            Piece(angle: -.pi / 2 + (r() - 0.5) * 2.2,   // upward fan, ±63°
+                  speed: 240 + r() * 200,
+                  spin: (r() - 0.5) * 14,
+                  size: 4 + r() * 3.5,
+                  round: i % 3 == 0,
+                  color: i % colors.count)
+        }
+    }()
+
+    var body: some View {
+        if let t = burst.frozenAt {
+            canvas(t)
+        } else {
+            TimelineView(.animation) { ctx in
+                canvas(ctx.date.timeIntervalSince(burst.start))
+            }
+        }
+    }
+
+    private func canvas(_ t: Double) -> some View {
+        Canvas { gc, _ in
+            guard t >= 0, t < Self.duration else { return }
+            let gravity = 760.0
+            let drag = 1.0 - min(t, 1) * 0.35
+            let fade = t < 0.55 ? 1 : max(0, 1 - (t - 0.55) / (Self.duration - 0.55))
+            for p in Self.pieces {
+                let x = Self.origin.x + cos(p.angle) * p.speed * t * drag
+                let y = Self.origin.y + sin(p.angle) * p.speed * t * drag + 0.5 * gravity * t * t
+                var g = gc
+                g.opacity = fade
+                g.translateBy(x: x, y: y)
+                g.rotate(by: .radians(p.spin * t))
+                let rect = CGRect(x: -p.size / 2, y: -p.size * 0.3, width: p.size, height: p.size * (p.round ? 1 : 0.6))
+                let shape = p.round ? Path(ellipseIn: CGRect(x: -p.size / 2.4, y: -p.size / 2.4, width: p.size / 1.2, height: p.size / 1.2))
+                                    : Path(roundedRect: rect, cornerRadius: 1)
+                g.fill(shape, with: .color(Self.colors[p.color]))
+            }
+        }
     }
 }

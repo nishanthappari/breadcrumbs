@@ -24,11 +24,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     lazy var router = URLRouter(model: model, coordinator: coordinator)
     private var hotKey: HotKey?
     /// ⌃⌥Y / ⌃⌥N (and ⌃⌥S on the last box), alive only while a check-in is pending.
+    /// On the last box ⌃⌥Y means "yes, start the next sprint" and ⌃⌥S "yes, and stop".
     private var checkInHotKeys: [HotKey] = []
     private var checkInKeysWanted: CheckInKeys = .none
     private var engineObserver: AnyCancellable?
 
-    private enum CheckInKeys { case none, yesNo, yesNoNext }
+    private enum CheckInKeys { case none, yesNo, yesNoStop }
 
     func applicationWillFinishLaunching(_ notification: Notification) {
         installURLHandler()
@@ -55,7 +56,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func syncCheckInHotKeys(_ engine: SprintEngine) {
         let wanted: CheckInKeys
         if engine.isAwaitingCheckIn, let s = engine.sprint {
-            wanted = s.currentIndex == s.config.boxes - 1 ? .yesNoNext : .yesNo
+            wanted = s.currentIndex == s.config.boxes - 1 ? .yesNoStop : .yesNo
         } else {
             wanted = .none
         }
@@ -66,17 +67,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if wanted != .none {
             // Actions re-check the phase: a press queued just as the check-in closed is a no-op.
             checkInHotKeys.append(HotKey(keyCode: kVK_ANSI_Y, display: CheckInShortcut.yes) { [weak self] in
-                MainActor.assumeIsolated { self?.model.answer(worked: true) }
+                MainActor.assumeIsolated {
+                    guard let model = self?.model else { return }
+                    model.answer(worked: true, startNext: model.isLastBoxCheckIn)
+                }
             })
             checkInHotKeys.append(HotKey(keyCode: kVK_ANSI_N, display: CheckInShortcut.no) { [weak self] in
                 MainActor.assumeIsolated { self?.model.answer(worked: false) }
             })
         }
-        if wanted == .yesNoNext {
-            checkInHotKeys.append(HotKey(keyCode: kVK_ANSI_S, display: CheckInShortcut.next) { [weak self] in
+        if wanted == .yesNoStop {
+            checkInHotKeys.append(HotKey(keyCode: kVK_ANSI_S, display: CheckInShortcut.stop) { [weak self] in
                 MainActor.assumeIsolated {
                     guard let model = self?.model, model.isLastBoxCheckIn else { return }
-                    model.answer(worked: true, startNext: true)
+                    model.answer(worked: true)
                 }
             })
         }

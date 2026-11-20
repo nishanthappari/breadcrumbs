@@ -85,6 +85,7 @@ enum FixtureSnapshots {
         answered.answer(worked: true, now: tr + 300)
         model.debugLoad(engine: answered, now: tr + 301)
         both("10-checkin-answered") { panel(model, .answered(worked: true)) }
+        both("10c-checkin-confetti") { panel(model, .answered(worked: true), burstAt: 0.35) }
 
         // Check-in on the last box (shows "Yes, start next sprint")
         let (last, tl) = engine([true, false, true, true, true])
@@ -107,9 +108,10 @@ enum FixtureSnapshots {
         print("Rendered fixtures to \(base.path)")
     }
 
-    static func panel(_ model: AppModel, _ mode: NudgeState.Mode) -> some View {
+    static func panel(_ model: AppModel, _ mode: NudgeState.Mode, burstAt: Double? = nil) -> some View {
         let nudge = NudgeState()
         nudge.mode = mode
+        if let burstAt { nudge.burst = ConfettiBurst(start: Date(), frozenAt: burstAt) }
         return NudgeView(model: model, nudge: nudge).frame(width: WindowCoordinator.panelSize.width).fixedSize()
             .background(Color(nsColor: .dynamic(0xDCD8CF, 0x3A3A3C)))
     }

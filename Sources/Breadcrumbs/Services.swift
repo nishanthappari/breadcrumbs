@@ -59,7 +59,8 @@ enum LoginItem {
 enum CheckInShortcut {
     static let yes = "⌃⌥Y"
     static let no = "⌃⌥N"
-    static let next = "⌃⌥S"
+    /// Last box only: tick it and stop (⌃⌥Y rolls into the next sprint there).
+    static let stop = "⌃⌥S"
 }
 
 /// A system-wide shortcut via Carbon's RegisterEventHotKey (no Accessibility permission needed).

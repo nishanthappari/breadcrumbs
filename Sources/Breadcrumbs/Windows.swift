@@ -44,9 +44,12 @@ final class WindowCoordinator {
         if model.engine.isAwaitingCheckIn { showCheckIn(focus: true) }
     }
 
+    private var burstWork: DispatchWorkItem?
+
     private func answered(worked: Bool, completed: Bool) {
         dismissWork?.cancel()
         withAnimation(Theme.spring) { nudge.mode = .answered(worked: worked) }
+        if worked { celebrate() }
         let work = DispatchWorkItem { [weak self] in
             guard let self else { return }
             if completed {
@@ -58,6 +61,24 @@ final class WindowCoordinator {
         }
         dismissWork = work
         DispatchQueue.main.asyncAfter(deadline: .now() + (completed ? 0.75 : 0.9), execute: work)
+    }
+
+    /// A small confetti burst on a Yes (any path: buttons, keys, hotkeys, URL scheme). The
+    /// burst view, and its TimelineView, is removed as soon as it ends.
+    private func celebrate() {
+        burstWork?.cancel()
+        guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion,
+              panel?.isVisible == true else { return }
+        nudge.burst = ConfettiBurst(start: Date())
+        let work = DispatchWorkItem { [weak self] in self?.endBurst() }
+        burstWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + ConfettiView.duration + 0.05, execute: work)
+    }
+
+    private func endBurst() {
+        burstWork?.cancel()
+        burstWork = nil
+        if nudge.burst != nil { nudge.burst = nil }
     }
 
     func closeCompletion() {
@@ -113,6 +134,7 @@ final class WindowCoordinator {
 
     func hidePanel() {
         dismissWork?.cancel()
+        endBurst()
         guard let p = panel, p.isVisible else { nudge.mode = .hidden; return }
         NSAnimationContext.runAnimationGroup({ ctx in
             ctx.duration = 0.2
