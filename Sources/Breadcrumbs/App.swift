@@ -23,8 +23,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     lazy var coordinator = WindowCoordinator(model: model)
     lazy var router = URLRouter(model: model, coordinator: coordinator)
     private var hotKey: HotKey?
-    /// ⌃⌥Y / ⌃⌥N (and ⌃⌥S on the last box), alive only while a check-in is pending.
-    /// On the last box ⌃⌥Y means "yes, start the next sprint" and ⌃⌥S "yes, and stop".
+    /// ⌃⇧Y / ⌃⇧N (and ⌃⇧S on the last box), alive only while a check-in is pending.
+    /// On the last box ⌃⇧Y means "yes, start the next sprint" and ⌃⇧S "yes, and stop".
     private var checkInHotKeys: [HotKey] = []
     private var checkInKeysWanted: CheckInKeys = .none
     private var engineObserver: AnyCancellable?

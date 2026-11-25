@@ -51,8 +51,8 @@ Look for the small box icon in your menu bar.
 
 | To do this | Do this |
 |---|---|
-| Start a sprint | Click the box in the menu bar → **Start sprint**, or press **⌃⌥B** (Control-Option-B) from anywhere |
-| Answer a check-in | Click **Yes** or **No** on the card, or from any app press **⌃⌥Y** (yes) or **⌃⌥N** (no). On the last box, **⌃⌥Y** ticks it and starts the next sprint, and **⌃⌥S** ticks it, stops and closes the card. You can also press ⌃⌥B to focus the card, then **Y**, **N**, **S** or **Return** |
+| Start a sprint | Click the box in the menu bar → **Start sprint**, or press **⌃⇧B** (Control-Shift-B) from anywhere |
+| Answer a check-in | Click **Yes** or **No** on the card, or from any app press **⌃⇧Y** (yes) or **⌃⇧N** (no). On the last box, **⌃⇧Y** ticks it and starts the next sprint, and **⌃⇧S** ticks it, stops and closes the card. You can also press ⌃⇧B to focus the card, then **Y**, **N**, **S** or **Return** |
 | Pause, resume or cancel | Click the menu bar icon during a sprint |
 | Change box length or count | Menu bar → **Settings**: 1–60 minutes per box, 1–24 boxes per sprint |
 | See your history | Menu bar → **History**: today's count and the last 7 days |
@@ -61,7 +61,7 @@ The menu bar shows the time left on the current box while a sprint runs. The res
 shows how many boxes you've ticked today.
 
 The check-in card never takes over your keyboard, so you can't answer it by accident while you're
-typing somewhere else. ⌃⌥Y, ⌃⌥N and ⌃⌥S only work while a check-in is waiting; the rest of the
+typing somewhere else. ⌃⇧Y, ⌃⇧N and ⌃⇧S only work while a check-in is waiting; the rest of the
 time those keys go to your other apps as usual. If another app already owns one of them, the card
 leaves that shortcut off.
 

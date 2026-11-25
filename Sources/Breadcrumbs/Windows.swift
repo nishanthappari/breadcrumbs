@@ -83,7 +83,7 @@ final class WindowCoordinator {
     // MARK: Nudge panel
 
     /// Shows the check-in in front of everything *without* taking keyboard focus, so typing
-    /// in another app can never answer it by accident. Click it, or press ⌃⌥B to focus it.
+    /// in another app can never answer it by accident. Click it, or press ⌃⇧B to focus it.
     func showCheckIn(focus: Bool = false) {
         dismissWork?.cancel()
         nudge.mode = .checkIn

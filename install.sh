@@ -27,4 +27,4 @@ xattr -dr com.apple.quarantine "$DEST/Breadcrumbs.app" 2>/dev/null || true
 open "$DEST/Breadcrumbs.app"
 echo
 echo "Breadcrumbs is installed in ~/Applications and running."
-echo "Look for the little box in your menu bar, or press Control-Option-B to start a sprint."
+echo "Look for the little box in your menu bar, or press Control-Shift-B to start a sprint."

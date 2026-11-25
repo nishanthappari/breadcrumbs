@@ -55,12 +55,12 @@ enum LoginItem {
 }
 
 /// Global shortcuts that answer a pending check-in from any app. Registered only while a
-/// check-in is waiting, so they never shadow ⌃⌥Y/N/S in other apps the rest of the time.
+/// check-in is waiting, so they never shadow those keys in other apps the rest of the time.
 enum CheckInShortcut {
-    static let yes = "⌃⌥Y"
-    static let no = "⌃⌥N"
-    /// Last box only: tick it and stop (⌃⌥Y rolls into the next sprint there).
-    static let stop = "⌃⌥S"
+    static let yes = "⌃⇧Y"
+    static let no = "⌃⇧N"
+    /// Last box only: tick it and stop (⌃⇧Y rolls into the next sprint there).
+    static let stop = "⌃⇧S"
 }
 
 /// A system-wide shortcut via Carbon's RegisterEventHotKey (no Accessibility permission needed).
@@ -68,7 +68,7 @@ enum CheckInShortcut {
 /// routes a press to the instance whose id fired. Unregistered when the instance is released.
 /// Main thread only.
 final class HotKey {
-    static let displayString = "⌃⌥B"
+    static let displayString = "⌃⇧B"
 
     private static let signature = OSType(0x4252_4443) // 'BRDC'
     private static var nextID: UInt32 = 1
@@ -80,7 +80,7 @@ final class HotKey {
     private var ref: EventHotKeyRef?
     private(set) var isRegistered = false
 
-    init(keyCode: Int = kVK_ANSI_B, modifiers: Int = controlKey | optionKey,
+    init(keyCode: Int = kVK_ANSI_B, modifiers: Int = controlKey | shiftKey,
          display: String = HotKey.displayString, action: @escaping () -> Void) {
         self.display = display
         id = Self.nextID
